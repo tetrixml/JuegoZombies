@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operación Extracción</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+
+<!-- Three.js se carga desde un CDN. "importmap" permite escribir import ... from 'three' en main.js -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<style>
+  :root {
+    --tinta: #12150e;
+    --oliva: #5b6b3e;
+    --ambar: #ffb347;
+    --alerta: #e0391f;
+    --hueso: #e8e2c0;
+    --titulo: 'Black Ops One', Impact, 'Arial Black', sans-serif;
+    --texto: 'Share Tech Mono', 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; color: var(--hueso); font-family: var(--texto); user-select: none; }
+  canvas { display: block; }
+
+  /* ---------- Mira ---------- */
+  #mira { position: fixed; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; pointer-events: none; }
+  #mira::before, #mira::after { content: ""; position: absolute; background: var(--hueso); box-shadow: 0 0 3px #000; }
+  #mira::before { left: 12px; top: 0; width: 2px; height: 26px; clip-path: polygon(0 0,100% 0,100% 36%,0 36%,0 64%,100% 64%,100% 100%,0 100%); }
+  #mira::after  { top: 12px; left: 0; height: 2px; width: 26px; clip-path: polygon(0 0,36% 0,36% 100%,64% 100%,64% 0,100% 0,100% 100%,0 100%); }
+  #hitmarker { position: fixed; left: 50%; top: 50%; width: 34px; height: 34px; margin: -17px 0 0 -17px; pointer-events: none; opacity: 0; transition: opacity .08s;
+    background: linear-gradient(45deg, transparent 46%, #fff 46% 54%, transparent 54%), linear-gradient(-45deg, transparent 46%, #fff 46% 54%, transparent 54%); }
+  #hitmarker.visible { opacity: 1; }
+  #hitmarker.kill { filter: drop-shadow(0 0 4px var(--alerta)) hue-rotate(-20deg); transform: scale(1.35); }
+
+  /* ---------- Panel de munición (abajo a la derecha) ---------- */
+  #panelArma { position: fixed; right: 28px; bottom: 24px; text-align: right; pointer-events: none; text-shadow: 0 0 6px #000; }
+  #nombreArma { font-size: 15px; letter-spacing: .12em; color: var(--ambar); }
+  #ammoActual { font-family: var(--titulo); font-size: 84px; line-height: .95; color: var(--hueso); }
+  #ammoActual.vacio { color: var(--alerta); animation: parpadeo .5s steps(2) infinite; }
+  #slots { margin-top: 6px; font-size: 14px; display: flex; gap: 14px; justify-content: flex-end; }
+  #slots span { padding: 2px 8px; border: 1px solid rgba(232,226,192,.25); color: rgba(232,226,192,.6); background: rgba(10,12,6,.55); }
+  #slots span.activo { border-color: var(--ambar); color: var(--ambar); }
+  @keyframes parpadeo { 50% { opacity: .25; } }
+
+  /* ---------- Misión (arriba a la izquierda) ---------- */
+  #mision { position: fixed; left: 24px; top: 20px; padding: 10px 14px; background: rgba(10,12,6,.6); border-left: 4px solid var(--oliva); pointer-events: none; font-size: 14px; line-height: 1.5; }
+  #mision b { color: var(--ambar); font-weight: normal; }
+  #zombisRestantes { font-family: var(--titulo); font-size: 26px; color: var(--hueso); }
+
+  /* ---------- Escudo (abajo al centro) ---------- */
+  #escudoBarra { position: fixed; left: 50%; bottom: 30px; width: 260px; margin-left: -130px; display: none; pointer-events: none; text-align: center; font-size: 13px; color: #8fd4ff; }
+  #escudoBarra.visible { display: block; }
+  #escudoFondo { height: 8px; margin-top: 4px; background: rgba(0,0,0,.6); border: 1px solid #4aa3ff; }
+  #escudoRelleno { height: 100%; width: 100%; background: #4aa3ff; box-shadow: 0 0 10px #4aa3ff; }
+
+  /* ---------- Mensajes ---------- */
+  #mensaje { position: fixed; left: 50%; top: 68%; transform: translateX(-50%); padding: 8px 18px; background: rgba(10,12,6,.75); border: 1px solid var(--ambar); color: var(--ambar);
+    font-size: 16px; opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap; }
+  #mensaje.visible { opacity: 1; }
+
+  /* ---------- Efectos de pantalla ---------- */
+  #danio, #efectoEscudo { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s; }
+  #danio { background: radial-gradient(ellipse at center, transparent 35%, rgba(190,20,10,.75) 100%); }
+  #efectoEscudo { background: radial-gradient(ellipse at center, transparent 55%, rgba(60,150,255,.38) 100%); box-shadow: inset 0 0 0 3px rgba(110,190,255,.5); }
+  #danio.visible, #efectoEscudo.visible { opacity: 1; }
+
+  /* ---------- Pantallas (menú, pausa, game over, victoria) ---------- */
+  #overlay { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; text-align: center; padding: 24px;
+    background: rgba(8,10,5,.84); }
+  #overlay.visible { display: flex; }
+  #ovTitulo { font-family: var(--titulo); font-size: clamp(38px, 8vw, 92px); margin: 0; letter-spacing: .04em; color: var(--hueso); line-height: 1; }
+  #overlay.derrota #ovTitulo { color: var(--alerta); }
+  #overlay.victoria #ovTitulo { color: #7dff9a; }
+  #ovSub { margin: 16px 0 26px; font-size: 18px; max-width: 54ch; color: rgba(232,226,192,.85); line-height: 1.5; }
+  #btnAccion { font-family: var(--titulo); font-size: 22px; letter-spacing: .08em; padding: 14px 34px; cursor: pointer; background: var(--ambar); color: var(--tinta); border: 0; border-radius: 0;
+    clip-path: polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%); }
+  #btnAccion:hover { background: #ffc673; }
+  #btnAccion:focus-visible { outline: 3px solid var(--hueso); outline-offset: 4px; }
+  #ovControles { display: none; margin-top: 34px; font-size: 15px; line-height: 1.9; color: rgba(232,226,192,.8); text-align: left; }
+  #ovControles kbd { display: inline-block; min-width: 26px; padding: 0 7px; margin-right: 8px; text-align: center; border: 1px solid var(--oliva); background: rgba(91,107,62,.3); color: var(--hueso); font-family: var(--texto); }
+  #ovControles .col { display: inline-block; vertical-align: top; margin: 0 22px; }
+
+  @media (max-width: 700px) { #ammoActual { font-size: 56px; } #ovControles .col { display: block; margin: 0 auto; } }
+  @media (prefers-reduced-motion: reduce) { #ammoActual.vacio { animation: none; } }
+</style>
+</head>
+<body>
+  <!-- El canvas de Three.js lo crea main.js; aquí solo está el HUD (HTML/CSS encima del juego) -->
+  <div id="mira"></div>
+  <div id="hitmarker"></div>
+  <div id="danio"></div>
+  <div id="efectoEscudo"></div>
+
+  <div id="mision">
+    OBJETIVO: <b>llegar a la zona de extracción</b><br>
+    ZOMBIS EN LA BASE: <span id="zombisRestantes">0</span>
+  </div>
+
+  <div id="panelArma">
+    <div id="nombreArma">PISTOLA</div>
+    <div id="ammoActual">0</div>
+    <div id="slots"><span id="slot1">[1] PISTOLA</span><span id="slot2">[2] RIFLE</span></div>
+  </div>
+
+  <div id="escudoBarra">ESCUDO <span id="escudoTexto"></span><div id="escudoFondo"><div id="escudoRelleno"></div></div></div>
+  <div id="mensaje"></div>
+
+  <div id="overlay" class="visible menu">
+    <h1 id="ovTitulo">OPERACIÓN EXTRACCIÓN</h1>
+    <p id="ovSub">Cargando modelos…</p>
+    <button id="btnAccion" type="button">INICIAR MISIÓN</button>
+    <div id="ovControles">
+      <div class="col">
+        <kbd>W</kbd>Avanzar<br><kbd>S</kbd>Retroceder<br><kbd>A</kbd>Izquierda<br><kbd>D</kbd>Derecha
+      </div>
+      <div class="col">
+        <kbd>Mouse</kbd>Apuntar<br><kbd>Clic</kbd>Disparar (1 por clic)<br><kbd>1</kbd>Pistola<br><kbd>2</kbd>Rifle de asalto
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
